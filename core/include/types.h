@@ -19,6 +19,11 @@ typedef signed long long       ssize_t;
 typedef unsigned long long     uintptr_t;
 typedef signed long long       intptr_t;
 
+// Булевый тип
+typedef unsigned char          bool;
+#define true                   (1)
+#define false                  (0)
+
 // Значение для пустых указателей
 #define NULL                   ((void*)0)
 
