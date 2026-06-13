@@ -28,6 +28,7 @@ void kmain(uint64_t magic, struct multiboot_info* mb2_info) {
 
         gdt_init();
         idt_init();
+        keyboard_init();
         proc_init();
         sched_init();
 

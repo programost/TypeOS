@@ -53,7 +53,7 @@ pic_remap_asm:
         out 0xA0, al
         call .io_wait
 
-        mov al, 0xFE
+        mov al, 0xFC    
         out 0x21, al
         mov al, 0xFF
         out 0xA1, al

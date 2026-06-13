@@ -658,6 +658,7 @@ sys_write (int fd, uint64_t buf, size_t count)
         struct vfs_file *file = fd_get (fd);
 
         if (file != NULL && is_null_path (file->path)) {
+                kprintf("sys_write: fd=%d is_null_path true, count=%u\n", fd, count);
                 return (int64_t) count;
         }
 
@@ -670,38 +671,48 @@ sys_write (int fd, uint64_t buf, size_t count)
                         ssize_t n;
 
                         if (chunk > sizeof (kbuf)) {
+                                kprintf("sys_write: pipe chunk reduced from %u to %u\n", chunk, sizeof(kbuf));
                                 chunk = sizeof (kbuf);
                         }
 
                         if (copy_from_user (kbuf, buf + done, chunk) != 0) {
+                                kprintf("sys_write: pipe copy_from_user failed at offset %u, err=%d\n", done, E_FAULT);
                                 return ERR (E_FAULT);
                         }
 
                         for (;;) {
                                 n = pipe_write (file->pipe, kbuf, chunk);
                                 if (n < 0) {
+                                        kprintf("sys_write: pipe_write returned %d (error)\n", n);
                                         return ERR (E_FAULT);
+                                        
                                 }
 
                                 if (n > 0) {
+                                        kprintf("sys_write: pipe wrote %d bytes\n", n);
                                         sched_wake_all ();
                                         break;
                                 }
 
                                 if (file->pipe->readers == 0) {
+                                        kprintf("sys_write: pipe no readers, EPIPE\n");
                                         return ERR (EPIPE);
+                                        
                                 }
 
+                                kprintf("sys_write: pipe full, blocking current task\n");
                                 sched_block_current ();
                         }
 
                         done += (size_t) n;
                 }
 
+                kprintf("sys_write: pipe finished, total %u bytes\n", done);
                 return (int64_t) done;
         }
 
         if (fd_is_tty_out (fd)) {
+                kprintf("sys_write: tty output fd=%d, count=%u\n", fd, count);
                 while (done < count) {
                         size_t chunk = count - done;
 
@@ -710,6 +721,7 @@ sys_write (int fd, uint64_t buf, size_t count)
                         }
 
                         if (copy_from_user (kbuf, buf + done, chunk) != 0) {
+                                kprintf("sys_write: tty copy_from_user failed at offset %u, err=%d\n", done, E_FAULT);
                                 return ERR (E_FAULT);
                         }
 
@@ -719,14 +731,16 @@ sys_write (int fd, uint64_t buf, size_t count)
 
                         done += chunk;
                 }
-
+                kprintf("sys_write: tty finished, total %u bytes\n", done);
                 return (int64_t) done;
         }
 
         if (file == NULL) {
+                kprintf("sys_write: fd=%d invalid (EBADF)\n", fd);
                 return ERR (E_BADF);
         }
 
+        kprintf("sys_write: fd=%d regular file (not implemented), returning count=%u\n", fd, count);
         return (int64_t) count;
 }
 
@@ -1000,6 +1014,7 @@ int64_t
 syscall_dispatch (uint64_t num, uint64_t a0, uint64_t a1, uint64_t a2,
                   uint64_t a3, uint64_t a4, uint64_t a5)
 {
+        kprintf("SYSCALL: num=%u\n", num);
         (void) a4;
         (void) a5;
 
@@ -1286,7 +1301,7 @@ syscall_dispatch (uint64_t num, uint64_t a0, uint64_t a1, uint64_t a2,
                 case TCGETS:
                         memset (&term, 0, sizeof (term));
                         term.c_cflag = 0x4B00U;
-                        term.c_cc[0] = 3;
+                        term.c_cc[0] = 3; 
                         if (copy_to_user (a2, &term, sizeof (term)) != 0) {
                                 return ERR (E_FAULT);
                         }

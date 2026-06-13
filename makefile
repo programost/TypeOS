@@ -6,9 +6,10 @@ LD       = ld
 NASM_ELF = elf64
 LD_EMU   = elf_x86_64
 
-CFLAGS   = -ffreestanding -nostdlib -nostartfiles -nodefaultlibs \
-        -Wall -Wextra -O2 -I core -m64 -mno-red-zone -mgeneral-regs-only \
-        -fno-stack-protector -fno-pie -Icore/include
+CFLAGS = -ffreestanding -nostdlib -nostartfiles -nodefaultlibs -Wall -Wextra -O2 \
+         -I core -m64 -mno-red-zone -mgeneral-regs-only -fno-stack-protector -fno-pie \
+         -Icore/include -std=c99
+
 NASMFLAGS = -f $(NASM_ELF)
 
 LDFLAGS  = -m $(LD_EMU) -T linker.ld
