@@ -73,5 +73,14 @@ initramfs_load (struct multiboot_info *info)
 
         kprintf ("Initramfs: unpacked %u bytes\n", (unsigned) size);
         initramfs_list_root ();
+
+        if (vfs_create ("/dev/console", S_IFREG | 0620U, "", 0) != 0) {
+                kprintf ("Initramfs: warning: could not create /dev/console\n");
+        }
+
+        if (vfs_create ("/dev/null", S_IFREG | 0666U, "", 0) != 0) {
+                kprintf ("Initramfs: warning: could not create /dev/null\n");
+        }
+
         return 0;
 }

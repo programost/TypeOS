@@ -71,7 +71,7 @@ _start:
         or eax, 1 << 5
         mov cr4, eax
 
-        ; 3. Identity mapping первых 256 МБ (128 x 2 МБ huge page)
+        ; Identity map 0-4 MiB (2 x 2 MiB huge pages). Above 4 MiB: 4 KiB map in paging_init.
         mov eax, pdp_table
         or eax, 3
         mov [pml4_table], eax
@@ -87,7 +87,7 @@ _start:
         or eax, 0x83
         mov [pd_table + ecx * 8], eax
         inc ecx
-        cmp ecx, 128
+        cmp ecx, 2
         jb .identity_map_loop
 
         ; Загрузка адреса PML4 в регистр CR3

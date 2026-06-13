@@ -20,6 +20,7 @@ void keyboard_init(void);
 void keyboard_poll(void);
 void keyboard_handler(void);
 int keyboard_getchar(void);
+int keyboard_haschar(void);
 char* get_string(void);
 
 #endif

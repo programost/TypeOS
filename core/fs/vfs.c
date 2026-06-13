@@ -192,60 +192,140 @@ vfs_lookup_parent (const char *path, char *name_out, size_t name_size, bool crea
         return current;
 }
 
+static void
+vfs_symlink_resolve (const char *base, const char *target, char *out, size_t outlen)
+{
+        const char *slash;
+        size_t dirlen;
+
+        if (target[0] == '/') {
+                strncpy (out, target, outlen - 1);
+                out[outlen - 1] = '\0';
+                return;
+        }
+
+        slash = strrchr (base, '/');
+        if (slash == NULL) {
+                out[0] = '\0';
+                return;
+        }
+
+        if (slash == base) {
+                dirlen = 1;
+        } else {
+                dirlen = (size_t) (slash - base);
+        }
+
+        if (dirlen + 1 + strlen (target) + 1 > outlen) {
+                out[0] = '\0';
+                return;
+        }
+
+        memcpy (out, base, dirlen);
+        out[dirlen] = '/';
+        strcpy (out + dirlen + 1, target);
+}
+
 static struct vfs_inode *
 vfs_lookup_path (const char *path, bool follow_symlink)
 {
-        struct vfs_inode *current = root_inode;
+        char curpath[512];
+        char linkbuf[512];
+        struct vfs_inode *current;
         char component[256];
-        const char *cursor = vfs_skip_slash (path);
+        const char *cursor;
         unsigned depth = 0;
 
         if (!vfs_is_absolute (path) || root_inode == NULL) {
                 return NULL;
         }
 
+        strncpy (curpath, path, sizeof (curpath) - 1);
+        curpath[sizeof (curpath) - 1] = '\0';
+
+restart:
+        current = root_inode;
+        cursor = vfs_skip_slash (curpath);
+
         while (*cursor != '\0') {
-                size_t len = 0;
+                        size_t len = 0;
 
-                while (cursor[len] != '\0' && cursor[len] != '/') {
-                        if (len + 1 >= sizeof (component)) {
-                                return NULL;
+                        while (cursor[len] != '\0' && cursor[len] != '/') {
+                                if (len + 1 >= sizeof (component)) {
+                                        return NULL;
+                                }
+                                component[len] = cursor[len];
+                                len++;
                         }
-                        component[len] = cursor[len];
-                        len++;
-                }
-                component[len] = '\0';
+                        component[len] = '\0';
 
-                cursor += len;
-                cursor = vfs_skip_slash (cursor);
+                        cursor += len;
+                        cursor = vfs_skip_slash (cursor);
 
-                if (current->type != VFS_TYPE_DIR) {
-                        return NULL;
-                }
-
-                {
-                        struct vfs_dentry *entry = vfs_dir_find (current, component, len);
-
-                        if (entry == NULL) {
+                        if (current->type != VFS_TYPE_DIR) {
                                 return NULL;
                         }
 
-                        current = entry->inode;
-                }
+                        {
+                                struct vfs_dentry *entry = vfs_dir_find (current, component, len);
 
-                if (*cursor != '\0' && current->type == VFS_TYPE_SYMLINK && follow_symlink) {
-                        if (++depth > 8 || current->symlink.target == NULL) {
-                                return NULL;
+                                if (entry == NULL) {
+                                        return NULL;
+                                }
+
+                                current = entry->inode;
                         }
-                        return vfs_lookup_path (current->symlink.target, true);
+
+                        if (current->type == VFS_TYPE_SYMLINK && follow_symlink) {
+                                char rest[256];
+
+                                if (++depth > 8 || current->symlink.target == NULL) {
+                                        return NULL;
+                                }
+
+                                strncpy (rest, cursor, sizeof (rest) - 1);
+                                rest[sizeof (rest) - 1] = '\0';
+
+                                {
+                                        char partial[512];
+                                        size_t plen = strlen (curpath) - strlen (cursor);
+
+                                        if (plen >= sizeof (partial)) {
+                                                return NULL;
+                                        }
+
+                                        memcpy (partial, curpath, plen);
+                                        partial[plen] = '\0';
+                                        vfs_symlink_resolve (partial, current->symlink.target,
+                                                             linkbuf, sizeof (linkbuf));
+                                }
+
+                                if (rest[0] != '\0') {
+                                        size_t l = strlen (linkbuf);
+
+                                        if (l + 1 + strlen (rest) + 1 > sizeof (linkbuf)) {
+                                                return NULL;
+                                        }
+
+                                        linkbuf[l] = '/';
+                                        strcpy (linkbuf + l + 1, rest);
+                                }
+
+                                strncpy (curpath, linkbuf, sizeof (curpath) - 1);
+                                curpath[sizeof (curpath) - 1] = '\0';
+                                depth = 0;
+                                goto restart;
+                        }
                 }
-        }
 
         if (current->type == VFS_TYPE_SYMLINK && follow_symlink) {
                 if (current->symlink.target == NULL) {
                         return NULL;
                 }
-                return vfs_lookup_path (current->symlink.target, true);
+
+                vfs_symlink_resolve (curpath, current->symlink.target,
+                                     linkbuf, sizeof (linkbuf));
+                return vfs_lookup_path (linkbuf, true);
         }
 
         return current;
@@ -380,14 +460,54 @@ vfs_stat (const char *path, struct vfs_stat *st)
 }
 
 int
+vfs_fstat (struct vfs_file *file, struct vfs_stat *st)
+{
+        if (file == NULL || file->inode == NULL || st == NULL) {
+                return -1;
+        }
+
+        st->type = file->inode->type;
+        st->mode = file->inode->mode;
+        st->size = file->inode->size;
+        return 0;
+}
+
+int
+vfs_readlink (const char *path, char *buf, size_t bufsz)
+{
+        struct vfs_inode *inode = vfs_lookup_path (path, false);
+        size_t len;
+
+        if (inode == NULL || buf == NULL || bufsz == 0
+            || inode->type != VFS_TYPE_SYMLINK || inode->symlink.target == NULL) {
+                return -1;
+        }
+
+        len = strlen (inode->symlink.target);
+        if (len >= bufsz) {
+                len = bufsz - 1;
+        }
+
+        memcpy (buf, inode->symlink.target, len);
+        buf[len] = '\0';
+        return (int) len;
+}
+
+int
 vfs_open (const char *path, struct vfs_file *file)
 {
         struct vfs_inode *inode = vfs_lookup_path (path, true);
 
-        if (inode == NULL || file == NULL || inode->type != VFS_TYPE_FILE) {
+        if (inode == NULL || file == NULL) {
                 return -1;
         }
 
+        if (inode->type != VFS_TYPE_FILE && inode->type != VFS_TYPE_DIR) {
+                return -1;
+        }
+
+        strncpy (file->path, path, sizeof (file->path) - 1);
+        file->path[sizeof (file->path) - 1] = '\0';
         file->inode = inode;
         file->pos = 0;
         return 0;
@@ -450,4 +570,31 @@ vfs_readdir (const char *path, struct vfs_dirent *entries, size_t max_entries)
         }
 
         return (int) count;
+}
+
+ssize_t
+vfs_read_at (const char *path, size_t offset, void *buf, size_t count)
+{
+        struct vfs_inode *inode = vfs_lookup_path (path, true);
+        uint8_t *dst = (uint8_t *) buf;
+        size_t available;
+
+        if (inode == NULL || inode->type != VFS_TYPE_FILE || buf == NULL) {
+                return -1;
+        }
+
+        if (offset >= inode->size) {
+                return 0;
+        }
+
+        available = inode->size - offset;
+        if (count > available) {
+                count = available;
+        }
+
+        if (count > 0 && inode->file.data != NULL) {
+                memcpy (dst, inode->file.data + offset, count);
+        }
+
+        return (ssize_t) count;
 }

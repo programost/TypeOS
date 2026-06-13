@@ -4,8 +4,11 @@ global idt_load
 global pic_remap_asm
 global irq0_handler_asm
 global irq1_handler_asm
+global pf_handler_asm
 
 extern keyboard_handler
+extern page_fault_handler
+extern sched_irq_frame
 
 pic_remap_asm:
         mov al, 0xFF
@@ -106,6 +109,19 @@ idt_load:
 
 irq0_handler_asm:
         PUSH_ALL
+        mov rax, [rsp + 128]        ; interrupted cs
+        and rax, 3
+        cmp rax, 3
+        jne .irq0_eoi
+        mov rdi, rsp
+        sub rsp, 8
+        call sched_irq_frame
+        add rsp, 8
+        test rax, rax
+        jz .irq0_eoi
+        mov qword [rsp + 128], 0x23
+        mov qword [rsp + 152], 0x1B
+.irq0_eoi:
         mov al, 0x20
         out 0x20, al
         POP_ALL
@@ -119,4 +135,16 @@ irq1_handler_asm:
         mov al, 0x20
         out 0x20, al
         POP_ALL
+        iretq
+
+pf_handler_asm:
+        PUSH_ALL
+        mov rdi, [rsp + 120]        ; error code
+        mov rax, cr2
+        mov rsi, rax
+        mov rdx, [rsp + 128]        ; rip
+        mov rcx, [rsp + 136]        ; cs
+        call page_fault_handler
+        POP_ALL
+        add rsp, 8                  ; drop error code
         iretq

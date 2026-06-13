@@ -2,6 +2,7 @@
 #include <types.h>
 #include <drivers.h>
 #include <vga.h>
+#include <sched.h>
 
 static bool shift_pressed = false;
 static bool extended_scancode = false;
@@ -96,6 +97,7 @@ static void keyboard_push(int key) {
         }
         keyboard_buffer[buffer_head] = key;
         buffer_head = next;
+        sched_wake_all ();
 }
 
 static int keyboard_handle_extended(uint8_t scancode) {
@@ -168,13 +170,17 @@ void keyboard_handler(void) {
         keyboard_poll();
 }
 
+int keyboard_haschar(void) {
+        keyboard_poll();
+        return buffer_head != buffer_tail;
+}
+
 int keyboard_getchar(void) {
         for (;;) {
-                keyboard_poll();
-                if (buffer_head != buffer_tail) {
+                if (keyboard_haschar()) {
                         break;
                 }
-                __asm__ volatile("sti; hlt" ::: "memory");
+                sched_block_current();
         }
 
         int key = keyboard_buffer[buffer_tail];

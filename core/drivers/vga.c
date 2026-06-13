@@ -461,7 +461,15 @@ void vga_set_cursor(int x, int y) {
         vga_update_hardware_cursor();
 }
 
+static void
+debugcon_putchar (char c)
+{
+        __asm__ volatile ("outb %%al, $0xe9" :: "a" (c) : "memory");
+}
+
 void vga_putchar(char c) {
+        debugcon_putchar (c);
+
         if (c == '\n') {
                 cursor_x = 0;
                 cursor_y++;

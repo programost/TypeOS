@@ -39,7 +39,10 @@ all: $(KERNEL)
 QEMU_MEM ?= 2048M
 
 run: iso
-	qemu-system-x86_64 -cdrom typeos.iso -m $(QEMU_MEM) -serial stdio
+	qemu-system-x86_64 -cdrom typeos.iso -m $(QEMU_MEM) \
+		-device isa-debugcon,iobase=0xe9,chardev=debugcon \
+		-chardev stdio,id=debugcon,mux=on,signal=off \
+		-serial chardev:debugcon
 
 iso: $(KERNEL)
 	grub-mkrescue -o typeos.iso iso/
